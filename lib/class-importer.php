@@ -294,7 +294,7 @@ class Importer implements LoggerAwareInterface {
 
 		// Store file meta for later use
 		$this->file_meta = array(
-			'docblock'   => $file['file'], // File docblock
+			'docblock'   => apply_filters( 'wp_parser_file_dockblock', $file['file'] ), // File docblock
 			'term_id'    => $file['path'], // Term name in the file taxonomy is the file name
 			'deprecated' => $deprecated_file, // Deprecation status
 		);
