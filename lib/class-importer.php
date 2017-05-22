@@ -566,7 +566,7 @@ class Importer implements LoggerAwareInterface {
 		 * @param bool  $import_ignored Optional; defaults to false. If true, functions or classes marked `@ignore` will be imported.
 		 * @param array $arg_overrides   Optional; array of parameters that override the defaults passed to wp_update_post().
 		 */
-		if ( ! apply_filters( 'wp_parser_pre_import_item', true, $data, $parent_post_id, $import_ignored, $arg_overrides ) ) {
+		if ( ! $data = apply_filters( 'wp_parser_pre_import_item', true, $data, $parent_post_id, $import_ignored, $arg_overrides ) ) {
 			return false;
 		}
 
