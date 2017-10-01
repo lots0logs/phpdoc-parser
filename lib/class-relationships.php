@@ -18,6 +18,8 @@ class Relationships {
 	 * @var array Map of post slugs to post ids.
 	 */
 	public $slugs_to_ids = array();
+	
+	public $slugs_to_names = array();
 
 	/**
 	 * Map of how post IDs relate to one another.
@@ -138,6 +140,12 @@ class Relationships {
 			'method' => $importer->post_type_method,
 			'function' => $importer->post_type_function,
 		);
+		
+		$this->slugs_to_names = array(
+			$importer->post_type_hook => array(),
+			$importer->post_type_method => array(),
+			$importer->post_type_function => array(),
+		);
 	}
 
 	/**
@@ -153,6 +161,11 @@ class Relationships {
 		// There is no way to get the name out of P2P so we hard code it here.
 		return in_array( $wpdb->prefix . 'p2p', $tables );
 	}
+	
+	public function slugs_to_names_add( $to_type, $to_slug, $name ) {
+		$to_slug = array_pop( $to_slug );
+		$this->slugs_to_names[ $to_type ][ $to_slug ] = $name;
+	}
 
 	/**
 	 * As each item imports, build an array mapping it's post_type->slug to it's post ID.
@@ -164,7 +177,6 @@ class Relationships {
 	 * @param array $post_data Post data
 	 */
 	public function import_item( $post_id, $data, $post_data ) {
-
 		$from_type = $post_data['post_type'];
 		$slug = $post_data['post_name'];
 
@@ -179,6 +191,7 @@ class Relationships {
 				$to_function_slug = $this->names_to_slugs( $to_function['name'], $data['namespace'] );
 
 				$this->relationships[ $from_type ][ $post_id ][ $to_type ][] = $to_function_slug;
+				$this->slugs_to_names_add( $to_type, $to_function_slug, $to_function['name'] );
 			}
 
 			// Functions to Methods
@@ -193,6 +206,7 @@ class Relationships {
 				$to_method_slug = $this->names_to_slugs( $to_method_slug, $data['namespace'] );
 
 				$this->relationships[ $from_type ][ $post_id ][ $to_type ][] = $to_method_slug;
+				$this->slugs_to_names_add( $to_type, $to_method_slug, $to_method['name'] );
 			}
 
 			// Functions to Hooks
@@ -202,6 +216,7 @@ class Relationships {
 				$to_hook_slug = $this->names_to_slugs( $to_hook['name'] );
 
 				$this->relationships[ $from_type ][ $post_id ][ $to_type ][] = $to_hook_slug;
+				$this->slugs_to_names_add( $to_type, $to_hook_slug, $to_hook['name'] );
 			}
 		}
 
@@ -213,6 +228,7 @@ class Relationships {
 				$to_function_slug = $this->names_to_slugs( $to_function['name'], $data['namespace'] );
 
 				$this->relationships[ $from_type ][ $post_id ][ $to_type ][] = $to_function_slug;
+				$this->slugs_to_names_add( $to_type, $to_function_slug, $to_function['name'] );
 			}
 
 			// Methods to Methods
@@ -231,6 +247,7 @@ class Relationships {
 				$to_method_slug = $this->names_to_slugs( $to_method_slug, $data['namespace'] );
 
 				$this->relationships[ $from_type ][ $post_id ][ $to_type ][] = $to_method_slug;
+				$this->slugs_to_names_add( $to_type, $to_method_slug, $to_method['name'] );
 			}
 
 			// Methods to Hooks
@@ -239,6 +256,7 @@ class Relationships {
 				$to_hook_slug = $this->names_to_slugs( $to_hook['name'] );
 
 				$this->relationships[ $from_type ][ $post_id ][ $to_type ][] = $to_hook_slug;
+				$this->slugs_to_names_add( $to_type, $to_hook_slug, $to_hook['name'] );
 			}
 		}
 
@@ -253,12 +271,14 @@ class Relationships {
 			WP_CLI::log( 'Removing current relationships...' );
 		}
 
-		p2p_delete_connections( 'functions_to_functions' );
-		p2p_delete_connections( 'functions_to_methods' );
-		p2p_delete_connections( 'functions_to_hooks' );
-		p2p_delete_connections( 'methods_to_functions' );
-		p2p_delete_connections( 'methods_to_methods' );
-		p2p_delete_connections( 'methods_to_hooks' );
+		if ( 'Divi' === getenv( 'WP_PARSER_PACKAGE' ) ) {
+			p2p_delete_connections( 'functions_to_functions' );
+			p2p_delete_connections( 'functions_to_methods' );
+			p2p_delete_connections( 'functions_to_hooks' );
+			p2p_delete_connections( 'methods_to_functions' );
+			p2p_delete_connections( 'methods_to_methods' );
+			p2p_delete_connections( 'methods_to_hooks' );
+		}
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			WP_CLI::log( 'Setting up relationships...' );
@@ -268,6 +288,7 @@ class Relationships {
 		foreach ( $this->post_types as $from_type ) {
 			// Iterate over relationships for each post type
 			foreach ( (array) @$this->relationships[ $from_type ] as $from_id => $to_types ) {
+				$external_relationships = array();
 
 				// Iterate over slugs for each post type being related TO
 				foreach ( $to_types as $to_type => $to_slugs ) {
@@ -277,7 +298,16 @@ class Relationships {
 						continue;
 					}
 
-					$this->relationships[ $from_type ][ $from_id ][ $to_type ] = $this->get_ids_for_slugs( $to_slugs, $this->slugs_to_ids[ $to_type ] );
+					list( $this->relationships[ $from_type ][ $from_id ][ $to_type ], $external_slugs ) = $this->get_ids_for_slugs( $to_slugs, $this->slugs_to_ids[ $to_type ] );
+					
+					if ( $relationships = $this->get_external_relationships( $external_slugs, $from_id, $to_type ) ) {
+						$to_type_pretty                            = str_replace( 'wp-parser-', '', $to_type ) . 's';
+						$external_relationships[ $to_type_pretty ] = $relationships;
+					}
+				}
+
+				if ( $external_relationships ) {
+					update_post_meta( $from_id, '_wp_parser_uses_external', $external_relationships );
 				}
 			}
 		}
@@ -418,7 +448,8 @@ class Relationships {
 	 * @return array
 	 */
 	public function get_ids_for_slugs( array $slugs, array $slugs_to_ids ) {
-		$slugs_with_ids = array();
+		$slugs_with_ids    = array();
+		$slugs_without_ids = array();
 
 		foreach ( $slugs as $index => $scoped_slugs ) {
 			// Find the first matching scope the ID exists for.
@@ -427,10 +458,38 @@ class Relationships {
 					$slugs_with_ids[ $slug ] = $slugs_to_ids[ $slug ];
 					// if we found it in this scope, stop searching the chain.
 					continue;
+				} else {
+					$slugs_without_ids[] = $slug;
 				}
 			}
 		}
 
-		return $slugs_with_ids;
+		return array( $slugs_with_ids, $slugs_without_ids );
+	}
+
+	public function get_external_relationships( array $slugs, $from_id, $to_type ) {
+		static $found = null;
+
+		$to_type_pretty = str_replace( 'wp-parser-', '', $to_type );
+		$items          = array();
+
+		foreach ( $slugs as $slug ) {
+			if ( isset( $found[ $slug ] ) ) {
+				continue;
+			}
+
+			$url      = "https://developer.wordpress.org/reference/{$to_type_pretty}s/{$slug}/";
+			$response = wp_remote_head( $url );
+
+			if ( 200 === wp_remote_retrieve_response_code( $response ) ) {
+				$name           = $this->slugs_to_names[ $to_type ][ $slug ];
+				$items[ $name ] = $slug;
+				$found[ $slug ] = true;
+			} else {
+				$found[ $slug ] = false;
+			}
+		}
+
+		return $items;
 	}
 }

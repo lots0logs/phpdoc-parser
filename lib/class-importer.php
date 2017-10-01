@@ -294,7 +294,7 @@ class Importer implements LoggerAwareInterface {
 
 		// Store file meta for later use
 		$this->file_meta = array(
-			'docblock'   => apply_filters( 'wp_parser_file_dockblock', $file['file'] ), // File docblock
+			'docblock'   => apply_filters( 'wp_parser_file_docblock', $file['file'] ), // File docblock
 			'term_id'    => $file['path'], // Term name in the file taxonomy is the file name
 			'deprecated' => $deprecated_file, // Deprecation status
 		);
@@ -566,7 +566,7 @@ class Importer implements LoggerAwareInterface {
 		 * @param bool  $import_ignored Optional; defaults to false. If true, functions or classes marked `@ignore` will be imported.
 		 * @param array $arg_overrides   Optional; array of parameters that override the defaults passed to wp_update_post().
 		 */
-		if ( ! $data = apply_filters( 'wp_parser_pre_import_item', true, $data, $parent_post_id, $import_ignored, $arg_overrides ) ) {
+		if ( ! apply_filters( 'wp_parser_pre_import_item', true, $data, $parent_post_id, $import_ignored, $arg_overrides ) ) {
 			return false;
 		}
 
